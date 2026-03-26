@@ -59,16 +59,15 @@ pipeline {
                         else
                             echo "ibm_saturn_client not found, proceeding with installation from Artifactory"
                             
+                            # Set up Artifactory URL with credentials
+                            ARTIFACTORY_URL="https://Shivaraman.S@ibm.com:${ACCESS_TOKEN}@na.artifactory.swg-devops.com/artifactory/api/pypi/sys-stg-team-pypi-local/simple"
+                            
                             echo "Checking Artifactory access"
                             curl -I -u "Shivaraman.S@ibm.com:${ACCESS_TOKEN}" \
                             "https://na.artifactory.swg-devops.com/artifactory/api/pypi/sys-stg-team-pypi-local/simple/"
                             
-                            echo "Checking ibm-saturn-client package versions"
-                            python -m pip index versions ibm-saturn-client -i \
-                            https://na.artifactory.swg-devops.com/artifactory/api/pypi/sys-stg-team-pypi-local/simple
-                            
                             echo "Installing ibm_saturn_client from Artifactory"
-                            pip install ibm_saturn_client --extra-index-url='https://na.artifactory.swg-devops.com/artifactory/api/pypi/sys-stg-team-pypi-local/simple'
+                            pip install ibm_saturn_client --index-url="${ARTIFACTORY_URL}" --trusted-host na.artifactory.swg-devops.com
                         fi
                     '''
                 }
