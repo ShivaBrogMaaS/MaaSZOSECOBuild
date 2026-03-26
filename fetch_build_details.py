@@ -8,9 +8,8 @@ from pathlib import Path
 import os
 import re
 import subprocess
-from ibm_saturn_client import send_data_to_saturn
 
-JENKINSFILE_PATH = "Jenkinsfile"
+JENKINSFILE_PATH = "Jenkinsfile2"
 
 with open("config.json", "r") as f:
     config = json.load(f)
@@ -285,25 +284,60 @@ def generate_log_files(output_string):
 def cron_for_datetime(dt):
     return f"{dt.minute} {dt.hour} {dt.day} {dt.month} *"
 
+# def update_jenkins_cron(next_run_dt):
+#     cron_expr = cron_for_datetime(next_run_dt)
+
+#     with open(JENKINSFILE_PATH, "r") as f:
+#         content = f.read()
+
+#     updated, count = re.subn(
+#         r"cron\(['\"]([^'\"]+)['\"]\)",
+#         f'cron("{cron_expr}")',
+#         content
+#     )
+
+#     if count == 0:
+#         raise RuntimeError("No cron trigger found in Jenkinsfile")
+
+#     with open(JENKINSFILE_PATH, "w") as f:
+#         f.write(updated)
+
+#     print(f"[CRON] Updated Jenkins cron → {cron_expr}")
+
+
+import re
+
 def update_jenkins_cron(next_run_dt):
     cron_expr = cron_for_datetime(next_run_dt)
 
     with open(JENKINSFILE_PATH, "r") as f:
         content = f.read()
 
-    updated, count = re.subn(
-        r"cron\(['\"]([^'\"]+)['\"]\)",
-        f'cron("{cron_expr}")',
-        content
-    )
-
-    if count == 0:
+    match = re.search(r'cron\(["\'](.*?)["\']\)', content)
+    if not match:
         raise RuntimeError("No cron trigger found in Jenkinsfile")
 
-    with open(JENKINSFILE_PATH, "w") as f:
-        f.write(updated)
+    current_cron = match.group(1)
 
-    print(f"[CRON] Updated Jenkins cron → {cron_expr}")
+    if current_cron.strip() == cron_expr.strip():
+        print(f"[CRON] No change required → {cron_expr}")
+        return False
+
+    updated_content = re.sub(
+        r'cron\(["\'].*?["\']\)',
+        f'cron("{cron_expr}")',
+        content,
+        count=1
+    )
+
+    with open(JENKINSFILE_PATH, "w") as f:
+        f.write(updated_content)
+
+    print(f"[CRON] Updated Jenkins cron:")
+    print(f"        OLD → {current_cron}")
+    print(f"        NEW → {cron_expr}")
+
+    return True
 
 def compute_next_run(build_found, build_datetime=None):
     now = datetime.now()
@@ -311,93 +345,76 @@ def compute_next_run(build_found, build_datetime=None):
     if build_found and build_datetime:
         days_ahead = (7 - build_datetime.weekday()) % 7 or 7
         next_monday = build_datetime + timedelta(days=days_ahead)
+        # return next_monday.replace(hour=5, minute=30, second=0) #4pm ist
         return next_monday.replace(hour=9, minute=0, second=0) # 9AM
 
     # Build not found → retry in 3 hours
     return now + timedelta(hours=3)
 
-def send_to_saturn():
-        response = send_data_to_saturn(
-        toolname="ECOBUILD",
-        toolowner=["Shivaraman.S@ibm.com","Meghana-Anand@ibm.com","Nischitha.K.C@ibm.com","sreenai1@in.ibm.com"],
-        emte=1.0,  
-        development_run=False,
-        toolteam=["z/OS Customer Test"],
-        tags=["service_test"],
-        toolversion="0.1.0")
-        if not hasattr(response, 'status_code') or response.status_code != 200:
-            raise Exception(f"SATURN returned {getattr(response, 'status_code', 'unknown')}: {response.text}")
-
-        else:
-            print(response.text)
-
 def send_to_slack(slack_message):
-    slack_key= os.environ.get("SLACK_KEY")
-    slack_url = f"https://hooks.slack.com/services/"+slack_key
-    print(slack_url)
+    slack_key = os.environ.get("SLACK_KEY")
+    slack_url = "https://hooks.slack.com/services/"+slack_key
+    # slack_url = slack_key.replace('\u00a0', ' ')
+
     slack_channel="ecobuild-automation"
+
     slack_payload = {
-            "text": f"\n```{slack_message}```\n",
-        }
+    "text": f"\n```{slack_message}```\n",
+    }
+
     if slack_channel is not None and slack_channel.strip() != "":
-            slack_payload["channel"] = slack_channel
+        slack_payload["channel"] = slack_channel
 
     response = requests.post(
-            slack_url, data=json.dumps(slack_payload), verify=False
-        )
+        slack_url, data=json.dumps(slack_payload), verify=False
+    )
+
     if response.status_code != 200:
         print("Unable to post to Slack.")
         print("Response: HTTP %s", response.status_code)
         print("Response content: %s", response.content)
         return False
-
     return True
-
-def cleanup_logs():
-    filename = 'response.json'
-    file_path = Path(filename)
-    
-    if file_path.exists():
-        try:
-            file_path.unlink()
-            print(f"Deleted {filename}")
-            return True
-        except Exception as e:
-            print(f"Error deleting {filename}: {e}")
-            return False
-    else:
-        print(f"{filename} does not exist.")
-        return False
-
 
 if __name__ == '__main__':
     result = login_to_ecobuild()
     status = result.get("success")
     data = result.get("data")
     err = result.get("error")
+
+
     print(f"Status: {status}")
     if err:
         print(f"Error: {err}")
     else:
+        print("Auth Token", data['token'])
         token = data['token']
         result = to_get_Weeklydetails(token)
         if result["success"]:
             print("Data is Saved in the Response.json file")
             process_response_file('response.json')
+
             output_string, entry_date , service_copy_message = getthedetails()
+
             build_found = bool(output_string and entry_date)
+
             if build_found:
                 print("[INFO] Build found for current week")
                 filter_output_string = filter_output_from_string(output_string)
                 log_string = service_copy_message + "\n\n" + filter_output_string
-                send_to_slack(log_string)
-                generate_log_files(log_string) #pushing log files only if a new build is found
-                # cleanup_logs()
+                # generate_log_files(log_string) #pushing log files only if a new build is found
+                print("LOG STRING:",log_string)
+                # send_to_slack(log_string)
             else:
                 print("[INFO] Build NOT found yet")
-                send_to_slack("[INFO] Build NOT found yet")
-                # next_run = compute_next_run(build_found, entry_date)
-                # update_jenkins_cron(next_run)
+                # send_to_slack("[INFO] Build NOT found yet")
+
+            next_run = compute_next_run(build_found, entry_date)
+            # update_jenkins_cron(next_run)
+            changed_cron = update_jenkins_cron(next_run)
+
+            if not changed_cron:
+                print("[INFO] Skipping commit since cron is unchanged")
 
 
         else:
