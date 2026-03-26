@@ -86,7 +86,7 @@ pipeline {
                         usernameVariable: 'USER',
                         passwordVariable: 'PASS'
                     ),
-                    string(credentialsId: 'ecobuild_slack_key', variable: 'SLACK_KEY')
+                    // string(credentialsId: 'ecobuild_slack_key', variable: 'SLACK_KEY')
                 ]) {
                     sh '''
                         python3 fetch_build_details.py
