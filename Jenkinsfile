@@ -103,10 +103,10 @@ pipeline {
                 sh '''
                     echo "Preparing to push Jenkinsfile to Git"
 
-                    git config user.name "Meghana-Anand"
-                    git config user.email "Meghana-Anand@ibm.com"
+                    git config user.name "Shiva"
+                    git config user.email "shivaremo0711@gmail.com"
 
-                    git add Jenkinsfile4 || true
+                    git add Jenkinsfile || true
 
                     if ! git diff --cached --quiet; then
                         git commit -m "Auto update Jenkins cron"
